@@ -1,9 +1,12 @@
 """
 Backend module for Natural Language to SQL Query System
-This module contains all the helper functions for database operations and LLM interactions.
+This module contains all the helper functions for database operations, LLM interactions,
+and conversational memory management.
 """
 
 import os
+import uuid
+from datetime import datetime
 import mysql.connector
 from mysql.connector import Error
 import google.generativeai as genai
@@ -11,7 +14,10 @@ from typing import Dict, List, Optional, Tuple, Any
 import json
 import re
 
+from conversation_memory import ConversationMemory
 
+from dotenv import load_dotenv
+load_dotenv()
 class DatabaseConnection:
     """Handles MySQL database connection and operations."""
     
@@ -206,7 +212,11 @@ class LLMQueryGenerator:
         """Set database schema information."""
         self.schema_info = schema_info
     
-    def generate_sql_query(self, natural_language_query: str) -> Tuple[Optional[str], Optional[str]]:
+    def generate_sql_query(
+        self,
+        natural_language_query: str,
+        conversation_context: Optional[str] = None,
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
         Generate SQL query from natural language using LLM.
         
@@ -216,6 +226,14 @@ class LLMQueryGenerator:
         Returns:
             Tuple of (sql_query, error_message)
         """
+        context_block = ""
+        if conversation_context:
+            context_block = f"""
+
+Conversation Context:
+{conversation_context}
+"""
+
         prompt = f"""You are a SQL query generator for a MySQL database. 
 Given the following database schema and a natural language question, generate ONLY a valid MySQL SQL query.
 
@@ -234,7 +252,11 @@ Rules:
 9. If the query requires grouping, use GROUP BY appropriately
 10. Use LIMIT if the user asks for top N or limited results
 
+If relevant, incorporate the insights provided in the conversation context.
+
 Natural Language Query: {natural_language_query}
+
+{context_block}
 
 SQL Query:"""
 
@@ -260,7 +282,13 @@ SQL Query:"""
         except Exception as e:
             return None, f"Error generating SQL query: {str(e)}"
     
-    def analyze_data(self, query: str, data: List[Dict], natural_language_query: str) -> Tuple[Optional[str], Optional[str]]:
+    def analyze_data(
+        self,
+        query: str,
+        data: List[Dict],
+        natural_language_query: str,
+        conversation_context: Optional[str] = None,
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
         Analyze query results using LLM and provide insights.
         
@@ -268,6 +296,7 @@ SQL Query:"""
             query: The SQL query that was executed
             data: Query results as list of dictionaries
             natural_language_query: Original natural language query
+            conversation_context: Relevant snippets from prior conversation
             
         Returns:
             Tuple of (analysis, error_message)
@@ -285,7 +314,15 @@ SQL Query:"""
         if total_rows > max_rows_for_analysis:
             data_info += f" (showing first {max_rows_for_analysis} rows for analysis)"
         
-        prompt = f"""You are an experienced data analyst. Analyze the following query results and provide meaningful insights.
+        context_block = ""
+        if conversation_context:
+            context_block = f"""
+
+Relevant Conversation Context:
+{conversation_context}
+"""
+
+        prompt = f"""You are an experienced data analyst. Analyze the following query results and provide meaningful insights.The end user is someone who doesnt have a computer science background and hence doesnt understand sql. Ensure the analysis is in simple and direct words.
         
 {data_info}
 
@@ -293,10 +330,12 @@ Original Question: {natural_language_query}
 
 SQL Query Executed: {query}
 
+{context_block}
+
 Query Results:
 {data_str}
-
-Please provide the below according to the original question:
+If the query results is null, return a response saying that the data for this query does not exist but make sure the response is professional.
+Please provide the below only if its applicable based on the query results, for example if length of query is one, there are no key insights,trends,or patterns or anomalies,apart from point 1 and point 5, if the field is not applicable for any of the other points, dont include it in the response, but regardless point 1 and point 5 should always be there:
 1. A summary of the data
 2. Key insights and trends
 3. Any notable patterns or anomalies
@@ -327,6 +366,19 @@ class QueryProcessor:
         """
         self.db = DatabaseConnection(**db_config)
         self.llm = LLMQueryGenerator(api_key)
+        memory_dir = os.getenv("MEMORY_STORE_DIR", "memory_store")
+        embedding_model = os.getenv(
+            "MEMORY_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+        )
+        self.memory = ConversationMemory(
+            storage_dir=memory_dir,
+            embedding_model=embedding_model,
+        )
+        self.memory_session_top_k = int(os.getenv("MEMORY_SESSION_TOP_K", "4"))
+        self.memory_global_top_k = int(os.getenv("MEMORY_GLOBAL_TOP_K", "2"))
+        self.memory_similarity_threshold = float(
+            os.getenv("MEMORY_SIMILARITY_THRESHOLD", "0.5")
+        )
         
         # Set schema info for LLM
         schema_info = self.db.get_schema_info()
@@ -335,12 +387,62 @@ class QueryProcessor:
         # Connect to database
         self.db.connect()
     
-    def process_query(self, natural_language_query: str) -> Dict[str, Any]:
+    def _build_conversation_context(
+        self, session_id: str, natural_language_query: str
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        """Retrieve relevant conversation history for the given session."""
+        if not natural_language_query:
+            return "", []
+        try:
+            memory_entries = self.memory.search(
+                query=natural_language_query,
+                session_id=session_id,
+                top_k_session=self.memory_session_top_k,
+                top_k_global=self.memory_global_top_k,
+                similarity_threshold=self.memory_similarity_threshold,
+            )
+        except Exception as exc:
+            warning = f"Conversation memory unavailable due to error: {exc}"
+            return warning, []
+
+        if not memory_entries:
+            return "", []
+
+        snippets = []
+        for idx, entry in enumerate(memory_entries, start=1):
+            origin = (
+                "current session"
+                if entry.get("session_id") == session_id
+                else f"session {entry.get('session_id')}"
+            )
+            snippet = entry.get("context_snippet") or ""
+            snippets.append(f"Context #{idx} ({origin}):\n{snippet}")
+
+        return "\n\n".join(snippets), memory_entries
+
+    def _prepare_data_preview(self, data: List[Dict[str, Any]]) -> str:
+        """Prepare a concise data preview for memory storage."""
+        if not data:
+            return ""
+        preview_rows = data[:5]
+        try:
+            return json.dumps(preview_rows, indent=2)
+        except (TypeError, ValueError):
+            return str(preview_rows)
+
+    def process_query(
+        self,
+        natural_language_query: str,
+        session_id: Optional[str] = None,
+        reset_session: bool = False,
+    ) -> Dict[str, Any]:
         """
         Process a natural language query end-to-end.
         
         Args:
             natural_language_query: User's natural language query
+            session_id: Identifier for the conversational session
+            reset_session: If True, clears stored memory for the session before processing
             
         Returns:
             Dictionary containing:
@@ -348,16 +450,56 @@ class QueryProcessor:
                 - data: Query results
                 - analysis: LLM analysis of results
                 - error: Error message if any
+                - session_id: Session identifier used for this request
+                - memory_context: Entries retrieved from the memory store
+                - memory_warning: Any warning encountered while retrieving memory
         """
+        active_session_id = session_id or f"session_{uuid.uuid4().hex[:12]}"
+
+        if reset_session and session_id:
+            self.memory.reset_session(session_id)
+
+        context_warning = None
+        memory_context_text = ""
+        memory_entries: List[Dict[str, Any]] = []
+        sanitized_context: List[Dict[str, Any]] = []
+        if not reset_session:
+            memory_context_text, memory_entries = self._build_conversation_context(
+                active_session_id, natural_language_query
+            )
+            if memory_context_text.startswith("Conversation memory unavailable"):
+                context_warning = memory_context_text
+                memory_context_text = ""
+                memory_entries = []
+            else:
+                for entry in memory_entries:
+                    sanitized_context.append(
+                        {
+                            "session_id": entry.get("session_id"),
+                            "timestamp": entry.get("timestamp"),
+                            "user_query": entry.get("user_query"),
+                            "sql_query": entry.get("sql_query"),
+                            "analysis": entry.get("analysis"),
+                            "data_preview": entry.get("data_preview"),
+                            "similarity": entry.get("similarity"),
+                            "context_snippet": entry.get("context_snippet"),
+                        }
+                    )
+
         result = {
             "sql_query": None,
             "data": None,
             "analysis": None,
-            "error": None
+            "error": None,
+            "session_id": active_session_id,
+            "memory_context": sanitized_context,
+            "memory_warning": context_warning,
         }
         
         # Step 1: Generate SQL query from natural language
-        sql_query, error = self.llm.generate_sql_query(natural_language_query)
+        sql_query, error = self.llm.generate_sql_query(
+            natural_language_query, conversation_context=memory_context_text
+        )
         if error:
             result["error"] = error
             return result
@@ -373,12 +515,33 @@ class QueryProcessor:
         result["data"] = data
         
         # Step 3: Analyze data using LLM
-        analysis, error = self.llm.analyze_data(sql_query, data, natural_language_query)
+        analysis, error = self.llm.analyze_data(
+            sql_query,
+            data,
+            natural_language_query,
+            conversation_context=memory_context_text,
+        )
         if error:
             result["error"] = f"Analysis error: {error}"
             return result
         
         result["analysis"] = analysis
+
+        # Step 4: Persist conversation memory
+        data_preview = self._prepare_data_preview(data)
+        extra_metadata = {
+            "analysis_length": len(analysis) if analysis else 0,
+            "sql_length": len(sql_query) if sql_query else 0,
+            "processed_at": datetime.utcnow().isoformat(),
+        }
+        self.memory.add_entry(
+            session_id=active_session_id,
+            user_query=natural_language_query,
+            sql_query=sql_query,
+            analysis=analysis or "",
+            data_preview=data_preview,
+            extra_metadata=extra_metadata,
+        )
         
         return result
     
@@ -399,6 +562,11 @@ def create_query_processor() -> QueryProcessor:
         - DB_NAME: Database name (default: olist_db)
         - DB_USER: MySQL username (default: root)
         - DB_PASSWORD: MySQL password (default: empty)
+        - MEMORY_STORE_DIR: Directory for FAISS index persistence (default: memory_store)
+        - MEMORY_SESSION_TOP_K: Number of session-specific memories to retrieve (default: 4)
+        - MEMORY_GLOBAL_TOP_K: Number of cross-session memories to retrieve (default: 2)
+        - MEMORY_SIMILARITY_THRESHOLD: Minimum cosine similarity for memory matches (default: 0.5)
+        - MEMORY_EMBEDDING_MODEL: Sentence-transformers model name (default: sentence-transformers/all-MiniLM-L6-v2)
     
     Returns:
         QueryProcessor instance
