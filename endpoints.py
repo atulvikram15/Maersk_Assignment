@@ -4,11 +4,13 @@ This module contains Flask endpoints that call backend helper functions.
 """
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from backend import create_query_processor, QueryProcessor
 import os
 from typing import Dict, Any
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # Global query processor instance
 query_processor: QueryProcessor = None

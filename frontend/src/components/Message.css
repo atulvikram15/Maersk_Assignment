@@ -1,0 +1,246 @@
+.message {
+  display: flex;
+  gap: 12px;
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.user-message {
+  justify-content: flex-end;
+}
+
+.user-message .message-content {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 18px 18px 4px 18px;
+  max-width: 70%;
+}
+
+.bot-message {
+  justify-content: flex-start;
+}
+
+.bot-message .message-content {
+  background: white;
+  color: #333;
+  border-radius: 18px 18px 18px 4px;
+  max-width: 85%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.error-message .message-content {
+  background: #fee;
+  color: #c33;
+  border: 1px solid #fcc;
+  border-radius: 18px;
+  max-width: 85%;
+}
+
+.message-avatar {
+  font-size: 32px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.message-content {
+  padding: 16px 20px;
+  word-wrap: break-word;
+}
+
+.message-text {
+  line-height: 1.6;
+}
+
+.message-time {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-top: 8px;
+  text-align: right;
+}
+
+/* Markdown Styling */
+.markdown-h1,
+.markdown-h2,
+.markdown-h3 {
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.markdown-h1 {
+  font-size: 24px;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 8px;
+}
+
+.markdown-h2 {
+  font-size: 20px;
+  color: #667eea;
+}
+
+.markdown-h3 {
+  font-size: 18px;
+  color: #764ba2;
+}
+
+.markdown-p {
+  margin: 12px 0;
+  line-height: 1.7;
+}
+
+.markdown-ul,
+.markdown-ol {
+  margin: 12px 0;
+  padding-left: 24px;
+}
+
+.markdown-li {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.markdown-strong {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.markdown-em {
+  font-style: italic;
+  color: #666;
+}
+
+.markdown-blockquote {
+  border-left: 4px solid #667eea;
+  padding-left: 16px;
+  margin: 16px 0;
+  color: #666;
+  font-style: italic;
+}
+
+.message-details {
+  margin-top: 16px;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 12px;
+}
+
+.details-toggle {
+  background: #f0f0f0;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #667eea;
+  transition: all 0.2s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.details-toggle:hover {
+  background: #e0e0e0;
+}
+
+.details-content {
+  margin-top: 12px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sql-section,
+.data-section {
+  margin-bottom: 16px;
+}
+
+.sql-section h4,
+.data-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.data-table-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table thead {
+  background: #f8f9fa;
+}
+
+.data-table th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid #e0e0e0;
+  color: #333;
+}
+
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.data-more {
+  padding: 8px 12px;
+  text-align: center;
+  color: #666;
+  font-size: 12px;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .user-message .message-content,
+  .bot-message .message-content {
+    max-width: 90%;
+  }
+  
+  .markdown-h1 {
+    font-size: 20px;
+  }
+  
+  .markdown-h2 {
+    font-size: 18px;
+  }
+}
+
+

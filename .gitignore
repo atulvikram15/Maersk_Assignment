@@ -1,2 +1,5 @@
 .env
 memory_store/
+frontend/node_modules/
+frontend/build/
+frontend/.env
