@@ -1,4 +1,4 @@
-# Natural Language to SQL Query System
+# E-Commerce Operations- Assistant
 
 This system allows users to query a MySQL database using natural language. It uses Google Generative AI to convert natural language queries into SQL, executes them, and provides analytical insights.
 
@@ -49,7 +49,7 @@ MEMORY_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 mysql -u root -p < olist_schema.sql
 ```
 
-3. Import your data into the database (if you have CSV files)
+3. Import your data into the database (if you have CSV files) using the cleaning.py file in the Preprocessing folder. You can also clean the dataset with the new_clean.py file.
 
 ### 4. Run the Application
 
